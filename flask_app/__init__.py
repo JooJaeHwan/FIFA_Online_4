@@ -32,7 +32,7 @@ def result():
     return render_template('result.html', position=position, date=date, players=players.itertuples()), 200
 
 @app.route('/info')
-def notice():
+def info():
     return render_template('info.html'), 200
 
 if __name__ == '__main__':
