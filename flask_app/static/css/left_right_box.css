@@ -1,0 +1,19 @@
+div.row {
+    width: 99.9%;
+    display: flex;
+    border: 1px solid #ffffff;
+}
+
+div.left {
+    width: 50%;
+    float: left;
+    box-sizing: border-box;
+    background: #ffffff;
+}
+
+div.right {
+    width: 50%;
+    float: right;
+    box-sizing: border-box;
+    background: #ffffff;
+}

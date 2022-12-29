@@ -1,0 +1,22 @@
+html {
+    position: relative;
+    min-height: 100%;
+    margin: 0;
+    background: rgb(255, 255, 255);
+}
+
+body {
+    min-height: 100%;
+}
+
+.footer {
+    position: relative;
+    left: 0;
+    bottom: 0px;
+    width: 90%;
+    padding: 90px;
+    text-align: center;
+    color: rgb(0, 0, 0);
+    background: rgb(255, 255, 255);
+    transform: translateY(50%);
+}
