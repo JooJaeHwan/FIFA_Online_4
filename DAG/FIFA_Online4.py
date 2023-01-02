@@ -123,7 +123,10 @@ def _hours_union():
 
 def _hours_delete():
     for i in range(1, 6):
-        args = f"hdfs dfs -rm -r /user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour - 1).zfill(2)}hour_0{i}.parquet"
+        hour = str(datetime.now().hour - 1).zfill(2)
+        if hour == '-1':
+            return "00시"
+        args = f"hdfs dfs -rm -r /user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{hour}hour_0{i}.parquet"
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         s_output, s_err = proc.communicate()
 
