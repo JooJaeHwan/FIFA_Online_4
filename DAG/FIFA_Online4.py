@@ -16,12 +16,13 @@ from airflow.hooks.S3_hook import S3Hook
 
 
 kst = Timezone('Asia/Seoul')
+headers = {'Authorization' : 'API 키'}
 
 dag = DAG(
     dag_id = "FIFA_Online4",
     description = "FIFA Online 4 Match Detail Analysis",
-    start_date = datetime(2022,12,26, tzinfo = kst),
-    end_date = datetime(2022,12,30, tzinfo = kst),
+    start_date = datetime(2023,1,3, tzinfo = kst),
+    end_date = datetime(2023,1,30, tzinfo = kst),
     dagrun_timeout=timedelta(minutes=60),
     schedule_interval = '0 * * * *'
 )
@@ -52,7 +53,7 @@ def get_spark_session():
     
 # 포지션 정보 가져오기
 def _Position_Crolling():
-    headers = {'Authorization' : 'API 키'}
+    global headers
     position_url = "https://static.api.nexon.co.kr/fifaonline4/latest/spposition.json"
     data = requests.get(position_url, headers=headers)
     position = data.json()
@@ -64,15 +65,13 @@ def _Position_Crolling():
 def _Match_Crolling(i, **context):
     match_list = [] 
     position_list = context["task_instance"].xcom_pull(task_ids='position_crolling')
-    s3_client = boto3.client(service_name="s3",
-                         aws_access_key_id="AWS 아이디",
-                         aws_secret_access_key="AWS 키")
+    hook = S3Hook('fifaonline4')
 
-    obj = s3_client.get_object(Bucket="fifaonline4", Key="data/player_data/player_data_df.parquet")
-    df = pd.read_parquet(io.BytesIO(obj["Body"].read()))
+    obj = hook.get_key("data/player_data/player_data_df.parquet", "fifaonline4")
+    df = pd.read_parquet(io.BytesIO(obj.get()["Body"].read()))
 
 
-    headers = {'Authorization' : 'API 키'} 
+    global headers
     # Match_ID 받아오는 API 주소
     Match_ID_url = f'https://api.nexon.co.kr/fifaonline4/v1.0/matches?matchtype=50&offset={i*100}&limit=100&orderby=desc'
     data = requests.get(Match_ID_url, headers=headers)
