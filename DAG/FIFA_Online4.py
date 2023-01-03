@@ -14,24 +14,20 @@ from airflow import DAG
 from airflow.operators.dummy import DummyOperator
 from airflow.hooks.S3_hook import S3Hook
 
-
+headers = {'Authorization' : ''}
 kst = Timezone('Asia/Seoul')
-headers = {'Authorization' : 'API 키'}
 
 dag = DAG(
     dag_id = "FIFA_Online4",
     description = "FIFA Online 4 Match Detail Analysis",
-    start_date = datetime(2023,1,3, tzinfo = kst),
-    end_date = datetime(2023,1,30, tzinfo = kst),
-    dagrun_timeout=timedelta(minutes=60),
+    start_date = datetime(2023,1,2, tzinfo = kst),
+    dagrun_timeout=timedelta(minutes=80),
     schedule_interval = '0 * * * *'
 )
 
 dag2 = DAG(
     dag_id = "Position_Count",
-    start_date = datetime(2022,12,26, tzinfo = kst),
-    end_date = datetime(2022,12,30, tzinfo = kst),
-    dagrun_timeout=timedelta(minutes=300),
+    start_date = datetime(2022,1,2, tzinfo = kst),
     schedule_interval = None
 )
 
@@ -63,62 +59,71 @@ def _Position_Crolling():
     return position_list
 
 def _Match_Crolling(i, **context):
-    match_list = [] 
-    position_list = context["task_instance"].xcom_pull(task_ids='position_crolling')
-    hook = S3Hook('fifaonline4')
+    try:
+        match_list = [] 
+        position_list = context["task_instance"].xcom_pull(task_ids='position_crolling')
+        hook = S3Hook('fifaonline4')
 
-    obj = hook.get_key("data/player_data/player_data_df.parquet", "fifaonline4")
-    df = pd.read_parquet(io.BytesIO(obj.get()["Body"].read()))
+        obj = hook.get_key("data/player_data/player_data_df.parquet", "fifaonline4")
+
+        df = pd.read_parquet(io.BytesIO(obj.get()["Body"].read()))
 
 
-    global headers
-    # Match_ID 받아오는 API 주소
-    Match_ID_url = f'https://api.nexon.co.kr/fifaonline4/v1.0/matches?matchtype=50&offset={i*100}&limit=100&orderby=desc'
-    data = requests.get(Match_ID_url, headers=headers)
-    match_id = data.json()
-    if len(match_id) == 0:
-        return 0
-    for mi in match_id:
-        Match_url = f'https://api.nexon.co.kr/fifaonline4/v1.0/matches/{mi}'
-        match_data = requests.get(Match_url, headers=headers)
-        match = match_data.json()
-        if match == {'message': '{matchid} could not found'}:
-            continue
-        match_id = match['matchId']
-        match_date = match['matchDate'].split("T")[0]
-        
-        if match['matchInfo']== []:
-            continue
-        for j in range(len(match['matchInfo'])):
-            seasonid = match['matchInfo'][j]['matchDetail']['seasonId']
-            if len(match['matchInfo'][j]['player']) == 0:
+        global headers
+        # Match_ID 받아오는 API 주소
+        Match_ID_url = f'https://api.nexon.co.kr/fifaonline4/v1.0/matches?matchtype=50&offset={i*100}&limit=100&orderby=desc'
+        data = requests.get(Match_ID_url, headers=headers)
+        match_id = data.json()
+        if len(match_id) == 0:
+            return 0
+        for mi in match_id:
+            Match_url = f'https://api.nexon.co.kr/fifaonline4/v1.0/matches/{mi}'
+            match_data = requests.get(Match_url, headers=headers)
+            match = match_data.json()
+            if match == {'message': '{matchid} could not found'}:
                 continue
-            for player in match['matchInfo'][j]['player']:
-                if player['spPosition'] == 28:
+            match_id = match['matchId']
+            match_date = match['matchDate'].split("T")[0]
+            
+            if match['matchInfo']== []:
+                continue
+            for j in range(len(match['matchInfo'])):
+                seasonid = match['matchInfo'][j]['matchDetail']['seasonId']
+                if len(match['matchInfo'][j]['player']) == 0:
                     continue
-                if len(df.loc[df['spid'] == player['spId']]) != 0:
-                    name = df.loc[df['spid'] == player['spId']]['name'].to_list()
-                    season= df.loc[df['spid'] == player['spId']]['season_class_name'].to_list()
-                    match_list.append({'match_id' : match_id, 'match_date' : match_date, 'season_id' : seasonid, 'position_id' : position_list[player['spPosition']], 'player_name' : name[0], 'player_season' : season[0], 'spid' : player['spId']})
-                else: continue
-    if match_list == []:
-        return 0
-    file_path = f"hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour).zfill(2)}hour_{f'{i}'.zfill(2)}.parquet"
-    # HDFS에 파일 저장
-    spark = get_spark_session()
-    
-    match_df = spark.createDataFrame(match_list)   
-    match_df.write.mode('overwrite').parquet(file_path)
+                for player in match['matchInfo'][j]['player']:
+                    if player['spPosition'] == 28:
+                        continue
+                    if len(df.loc[df['spid'] == player['spId']]) != 0:
+                        name = df.loc[df['spid'] == player['spId']]['name'].to_list()
+                        season= df.loc[df['spid'] == player['spId']]['season_class_name'].to_list()
+                        match_list.append({'match_id' : match_id, 'match_date' : match_date, 'season_id' : seasonid, 'position_id' : position_list[player['spPosition']], 'player_name' : name[0], 'player_season' : season[0], 'spid' : player['spId']})
+                    else: continue
+        if match_list == []:
+            return 0
+        file_path = f"hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour).zfill(2)}hour_{f'{i}'.zfill(2)}.parquet"
+        # HDFS에 파일 저장
+        spark = get_spark_session()
+        
+        match_df = spark.createDataFrame(match_list)   
+        match_df.write.mode('overwrite').parquet(file_path)
+    except:
+        return "오류"
     
 
 def _hours_union():
     spark = get_spark_session()
-    result = spark.read.parquet(f'hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour - 1).zfill(2)}hour_01.parquet')
-    for i in range(2, 6):
-        df = spark.read.parquet(f'hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour - 1).zfill(2)}hour_0{i}.parquet')
-        result = result.union(df)
-        file_path = f"hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour - 1).zfill(2)}hour.parquet"
-        result.write.mode("overwrite").parquet(file_path)    
+    result = 0
+    for i in range(1, 6):
+        try:
+            if result == 0:
+                result = spark.read.parquet(f'hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour - 1).zfill(2)}hour_0{i}.parquet')
+            df = spark.read.parquet(f'hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour - 1).zfill(2)}hour_0{i}.parquet')
+            result = result.union(df)
+            file_path = f"hdfs://localhost:9000/user/jjwani/FIFA4/data/match/{datetime.now().date()}/temporary/match_{str(datetime.now().hour - 1).zfill(2)}hour.parquet"
+            result.write.mode("overwrite").parquet(file_path)
+        except:
+            continue
 
 def _hours_delete():
     for i in range(1, 6):
